@@ -36,6 +36,11 @@ export interface Equipment {
   status: 'normal' | 'damaged' | 'repairing'
   repairCost: number
   requiredAction: ActionType
+  durability: number
+  maxDurability: number
+  repairEndTime: number
+  durabilityCost: number
+  repairDuration: number
 }
 
 export interface PetCase {
@@ -113,11 +118,11 @@ export const symptoms: Symptom[] = [
 ]
 
 export const initialEquipment: Equipment[] = [
-  { id: 'scanner', name: '扫描仪', status: 'normal', repairCost: 50, requiredAction: 'examine' },
-  { id: 'injector', name: '注射器', status: 'normal', repairCost: 60, requiredAction: 'inject' },
-  { id: 'dispenser', name: '药品发放器', status: 'normal', repairCost: 45, requiredAction: 'medicate' },
-  { id: 'feeder', name: '喂食器', status: 'normal', repairCost: 30, requiredAction: 'feed' },
-  { id: 'isolation_unit', name: '隔离舱', status: 'normal', repairCost: 80, requiredAction: 'isolate' },
+  { id: 'scanner', name: '扫描仪', status: 'normal', repairCost: 50, requiredAction: 'examine', durability: 100, maxDurability: 100, repairEndTime: 0, durabilityCost: 10, repairDuration: 10000 },
+  { id: 'injector', name: '注射器', status: 'normal', repairCost: 60, requiredAction: 'inject', durability: 100, maxDurability: 100, repairEndTime: 0, durabilityCost: 15, repairDuration: 12000 },
+  { id: 'dispenser', name: '药品发放器', status: 'normal', repairCost: 45, requiredAction: 'medicate', durability: 100, maxDurability: 100, repairEndTime: 0, durabilityCost: 8, repairDuration: 8000 },
+  { id: 'feeder', name: '喂食器', status: 'normal', repairCost: 30, requiredAction: 'feed', durability: 100, maxDurability: 100, repairEndTime: 0, durabilityCost: 5, repairDuration: 6000 },
+  { id: 'isolation_unit', name: '隔离舱', status: 'normal', repairCost: 80, requiredAction: 'isolate', durability: 100, maxDurability: 100, repairEndTime: 0, durabilityCost: 20, repairDuration: 15000 },
 ]
 
 const diseaseSymptomMap: Record<string, string[]> = {

@@ -2,8 +2,9 @@ import { useGameStore } from '@/store/useGameStore'
 import { getBreed, medicines } from '@/data/gameData'
 import type { ActionType } from '@/data/gameData'
 import {
-  Search, Pill, Syringe, UtensilsCrossed, ShieldAlert, X
+  Search, Pill, Syringe, UtensilsCrossed, ShieldAlert, X, Loader
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 const actions: { type: ActionType; label: string; icon: typeof Search; color: string; bgColor: string }[] = [
   { type: 'examine', label: '检查', icon: Search, color: 'text-cyan-400', bgColor: 'from-cyan-900/40 to-cyan-800/20' },
@@ -28,6 +29,16 @@ export default function TreatmentPanel() {
   const isolate = useGameStore(s => s.isolate)
   const selectMedicine = useGameStore(s => s.selectMedicine)
   const cancelMedicineSelect = useGameStore(s => s.cancelMedicineSelect)
+  const tickRepairs = useGameStore(s => s.tickRepairs)
+  const [, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      tickRepairs()
+      setNow(Date.now())
+    }, 500)
+    return () => clearInterval(interval)
+  }, [tickRepairs])
 
   const selectorTitle = pendingAction === 'feed' ? '选择食物' : pendingAction === 'inject' ? '选择注射剂' : '选择药品'
 
@@ -71,6 +82,8 @@ export default function TreatmentPanel() {
         {actions.map(({ type, label, icon: Icon, color, bgColor }) => {
           const available = isActionAvailable(type)
           const equip = equipment.find(e => e.requiredAction === type)
+          const isRepairing = equip?.status === 'repairing'
+          const remainingMs = isRepairing ? Math.max(0, equip.repairEndTime - Date.now()) : 0
 
           return (
             <button
@@ -91,6 +104,16 @@ export default function TreatmentPanel() {
               </span>
               {equip?.status === 'damaged' && (
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              )}
+              {isRepairing && (
+                <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 bg-yellow-500 rounded-full">
+                  <Loader className="w-2.5 h-2.5 text-white animate-spin" />
+                </span>
+              )}
+              {isRepairing && (
+                <span className="text-[9px] text-yellow-400 font-mono">
+                  {Math.ceil(remainingMs / 1000)}s
+                </span>
               )}
             </button>
           )

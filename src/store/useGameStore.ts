@@ -38,6 +38,7 @@ interface GameState {
   cancelMedicineSelect: () => void
   performTreatment: (action: ActionType, medicineId?: string | null) => void
   repairEquipment: (id: string) => void
+  tickRepairs: () => void
   dismissResult: () => void
   dismissAccident: () => void
   generateNewCase: () => void
@@ -103,6 +104,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   selectCase: (id: string) => {
     const state = get()
+    state.tickRepairs()
     if (state.gamePhase === 'accident' || state.gamePhase === 'result') return
     set({
       activeCaseId: id,
@@ -115,6 +117,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   examine: () => {
     const state = get()
+    state.tickRepairs()
     const activeCase = state.cases.find(c => c.id === state.activeCaseId)
     if (!activeCase) return
 
@@ -122,12 +125,20 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (scanner?.status !== 'normal') return
     if (state.actionCooldowns.examine > Date.now()) return
 
+    const newDurability = Math.max(0, scanner.durability - scanner.durabilityCost)
+    const newStatus = newDurability <= 0 ? 'damaged' as const : 'normal' as const
+
     const updatedCases = state.cases.map(c =>
       c.id === activeCase.id ? { ...c, examined: true } : c
     )
 
+    const updatedEquipment = state.equipment.map(e =>
+      e.id === scanner.id ? { ...e, durability: newDurability, status: newStatus } : e
+    )
+
     set({
       cases: updatedCases,
+      equipment: updatedEquipment,
       actionCooldowns: { ...state.actionCooldowns, examine: Date.now() + 3000 },
     })
   },
@@ -194,6 +205,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   performTreatment: (action: ActionType, medicineId?: string | null) => {
     const state = get()
+    state.tickRepairs()
     const activeCase = state.cases.find(c => c.id === state.activeCaseId)
     if (!activeCase) return
 
@@ -215,6 +227,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const isCorrect = actionCorrect && medicineCorrect
 
+    const newDurability = Math.max(0, requiredEquip.durability - requiredEquip.durabilityCost)
+    const normalBreak = newDurability <= 0
+
     if (isCorrect) {
       const coinsEarned = getCoinsForUrgency(activeCase.urgency)
       const expGain = activeCase.urgency === 'high' ? 30 : activeCase.urgency === 'medium' ? 20 : 10
@@ -228,10 +243,17 @@ export const useGameStore = create<GameState>((set, get) => ({
         c.id === activeCase.id ? { ...c, status: 'cured' as const } : c
       )
 
+      const updatedEquipment = state.equipment.map(e =>
+        e.id === requiredEquip.id ? { ...e, durability: newDurability, status: normalBreak ? 'damaged' as const : e.status } : e
+      )
+
       const itemType = action === 'feed' ? '食物' : action === 'inject' ? '注射剂' : '药品'
       let message = `诊断正确！${activeCase.petName} 的「${disease.name}」已治愈！`
       if (medicineCost > 0) {
         message += `（扣除${itemType}费 ${medicineCost} ⬡）`
+      }
+      if (normalBreak) {
+        message += `（${requiredEquip.name}耐久耗尽损坏！）`
       }
 
       const result: DiagnosisResult = {
@@ -244,13 +266,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         coinsEarned: netCoins,
         medicineCost,
         accidentType: null,
-        damagedEquipment: null,
+        damagedEquipment: normalBreak ? requiredEquip.id : null,
         message,
         errorType: null,
       }
 
       set({
         cases: updatedCases,
+        equipment: updatedEquipment,
         player: {
           ...state.player,
           coins: state.player.coins + netCoins,
@@ -268,7 +291,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     } else {
       const penalty = getPenaltyForAccident(activeCase.urgency)
       const totalDeduction = penalty + medicineCost
-      const damagedEquipId = disease.accidentType === 'bite'
+      const biteDamage = disease.accidentType === 'bite'
+      const damagedEquipId = (biteDamage || normalBreak)
         ? requiredEquip?.id || null
         : null
 
@@ -276,11 +300,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         c.id === activeCase.id ? { ...c, status: 'accident' as const } : c
       )
 
-      const updatedEquipment = damagedEquipId
-        ? state.equipment.map(e =>
-            e.id === damagedEquipId ? { ...e, status: 'damaged' as const } : e
-          )
-        : state.equipment
+      const updatedEquipment = state.equipment.map(e => {
+        if (e.id === requiredEquip.id) {
+          const finalDurability = biteDamage ? 0 : newDurability
+          const finalStatus = finalDurability <= 0 ? 'damaged' as const : e.status
+          return { ...e, durability: finalDurability, status: finalStatus }
+        }
+        return e
+      })
 
       let message = ''
       const itemType = action === 'feed' ? '食物' : action === 'inject' ? '注射剂' : '药品'
@@ -293,6 +320,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         const correctMed = disease.medicineId ? getMedicine(disease.medicineId) : null
         const usedMed = medicineId ? getMedicine(medicineId) : null
         message = `用错${itemType}了！${activeCase.petName} 患的是「${disease.name}」，应该用「${correctMed?.name || '正确物品'}」而不是「${usedMed?.name || '未知物品'}」！（扣除${itemType}费 ${medicineCost} ⬡）`
+      }
+      if (biteDamage) {
+        message += `（${requiredEquip.name}被咬坏了！）`
+      } else if (normalBreak) {
+        message += `（${requiredEquip.name}耐久耗尽损坏！）`
       }
 
       const result: DiagnosisResult = {
@@ -330,19 +362,38 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   repairEquipment: (id: string) => {
     const state = get()
+    state.tickRepairs()
     const equip = state.equipment.find(e => e.id === id)
-    if (!equip || equip.status === 'normal') return
+    if (!equip || equip.status === 'normal' || equip.status === 'repairing') return
     if (state.player.coins < equip.repairCost) return
 
     set({
       equipment: state.equipment.map(e =>
-        e.id === id ? { ...e, status: 'normal' as const } : e
+        e.id === id
+          ? { ...e, status: 'repairing' as const, repairEndTime: Date.now() + e.repairDuration }
+          : e
       ),
       player: {
         ...state.player,
         coins: state.player.coins - equip.repairCost,
       },
     })
+  },
+
+  tickRepairs: () => {
+    const state = get()
+    const now = Date.now()
+    let hasChanges = false
+    const updatedEquipment = state.equipment.map(e => {
+      if (e.status === 'repairing' && e.repairEndTime > 0 && now >= e.repairEndTime) {
+        hasChanges = true
+        return { ...e, status: 'normal' as const, durability: e.maxDurability, repairEndTime: 0 }
+      }
+      return e
+    })
+    if (hasChanges) {
+      set({ equipment: updatedEquipment })
+    }
   },
 
   dismissResult: () => {
